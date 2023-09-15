@@ -3,7 +3,7 @@ import requests
 
 class SpotifyUserLogsProducer:
     _TOPIC = "spotify-user-logs"
-    _KEY = "temp_logs"
+    _KEY = "realtime-logs"
     _SLEEP_INTERVAL = 2
     def __init__(self, config):
         self._producer = Producer(config)

@@ -1,3 +1,4 @@
+import json
 from confluent_kafka import Producer
 import requests
 
@@ -22,13 +23,20 @@ class SpotifyUserLogsProducer:
                     for line in response.iter_content(chunk_size=1024):
                         if line:
                             data = line.decode('utf-8')
-                            # print(data)
-                            self._producer.produce(
-                                topic=self._TOPIC,
-                                key=self._KEY,
-                                value=data,
-                                callback=self._producer_callback
-                            )
+                            try:
+                                data_dict = json.loads(data)
+                                session_id = data_dict.pop('session_id')
+
+                                modified_data = json.dumps(data_dict)
+
+                                self._producer.produce(
+                                    topic=self._TOPIC,
+                                    key=session_id,
+                                    value=modified_data,
+                                    callback=self._producer_callback
+                                )
+                            except json.JSONDecodeError as json_error:
+                                print(f"Failed to parse JSON: {json_error}")
                 else:
                     print(f"Failed to fetch data. Status code: {response.status_code}")
         except Exception as e:

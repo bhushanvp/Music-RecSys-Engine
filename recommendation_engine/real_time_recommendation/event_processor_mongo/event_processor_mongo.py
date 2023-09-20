@@ -1,6 +1,28 @@
-from confluent_kafka import Consumer, KafkaError
+from confluent_kafka import Consumer, KafkaError, Producer
 from pymongo import MongoClient
 import json
+
+class KafkaProducer:
+    _TOPIC = "spotify-realtime-recommender"
+    _KEY = "generate-recommendation"
+
+    def __init__(self, config):
+        self._producer = Producer(config)
+
+    def _producer_callback(self, err, msg):
+        if err:
+            print(err)
+        else:
+            print("Produced :", msg)
+
+    def produce_data(self, key, msg):
+        user_data = json.dumps(msg)
+        self._producer.produce(
+            topic=self._TOPIC,
+            key=key,
+            value=user_data,
+            callback=self._producer_callback
+        )
 
 class KafkaConsumer:
     def __init__(self, config, topic):
@@ -44,8 +66,10 @@ class SpotifyUserLogsConsumer:
     _MONGODB_REALTIME_USER_PROFILES_COLLECTION = "realtime-user-profiles"
     _MONGODB_CURRENT_TRACK_FEATURES = "track-features"
 
-    def __init__(self, config):
-        self.kafka_consumer = KafkaConsumer(config, self._KAFKA_TOPIC)
+    def __init__(self, consumer_config, producer_config):
+        self.kafka_consumer = KafkaConsumer(consumer_config, self._KAFKA_TOPIC)
+        self.kafka_producer = KafkaProducer(producer_config)
+
         self.mongodb_client = MongoDBClient(self._MONGODB_HOST, self._MONGODB_PORT, self._MONGODB_DB)
         self._realtime_user_profiles_collection = self.mongodb_client.get_collection(self._MONGODB_REALTIME_USER_PROFILES_COLLECTION)
         self._current_track_features = self.mongodb_client.get_collection(self._MONGODB_CURRENT_TRACK_FEATURES)
@@ -100,6 +124,7 @@ class SpotifyUserLogsConsumer:
 
             try:
                 self._realtime_user_profiles_collection.update_one({'session_id': session_id}, {'$set': new_temporary_user_profile})
+                self.kafka_producer.produce_data(session_id, new_temporary_user_profile)
                 print("Got")
             except Exception as e:
                 print(f"Error updating MongoDB: {e}")
@@ -115,17 +140,23 @@ class SpotifyUserLogsConsumer:
 
             try:
                 self._realtime_user_profiles_collection.insert_one(temporary_user_profile)
+                self.kafka_producer.produce_data(session_id, temporary_user_profile)
                 print("Hit")
             except Exception as e:
                 print(f"Error inserting into MongoDB: {e}")
 
 def main():
-    config = {
+    mongo_consumer_config = {
         "bootstrap.servers": "localhost:9092",
         "group.id": "console-consumer-97531",
         "auto.offset.reset": "latest"
     }
-    stock_consumer = SpotifyUserLogsConsumer(config)
+
+    gen_rec_producer_config = {
+        "bootstrap.servers": "localhost:9092"
+    }
+
+    stock_consumer = SpotifyUserLogsConsumer(mongo_consumer_config, gen_rec_producer_config)
     stock_consumer.consume_realtime_logs()
 
 if __name__ == "__main__":

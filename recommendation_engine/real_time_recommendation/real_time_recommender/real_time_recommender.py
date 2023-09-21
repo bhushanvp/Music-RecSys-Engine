@@ -4,7 +4,6 @@ from pyspark.sql import SparkSession
 from confluent_kafka import KafkaError, Consumer
 import pyspark.sql.functions as F
 from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
 
 class KafkaConsumer:
     def __init__(self, config, topic):

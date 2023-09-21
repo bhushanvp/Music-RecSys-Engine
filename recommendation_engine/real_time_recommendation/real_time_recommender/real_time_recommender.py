@@ -21,6 +21,33 @@
 
 # user_profile_df = user_profiles_df.filter(col("session_id")=="0_00010fc5-b79e-4cdf-bc4c-f140d0f99a3a")
 
+        # schema = StructType([
+        #     StructField("session_id", StringType(), True),
+        #     StructField("acousticness", FloatType(), True),
+        #     StructField("beat_strength", FloatType(), True),
+        #     StructField("bounciness", FloatType(), True),
+        #     StructField("danceability", FloatType(), True),
+        #     StructField("dyn_range_mean", FloatType(), True),
+        #     StructField("energy", FloatType(), True),
+        #     StructField("flatness", FloatType(), True),
+        #     StructField("instrumentalness", FloatType(), True),
+        #     StructField("liveness", FloatType(), True),
+        #     StructField("loudness", FloatType(), True),
+        #     StructField("mechanism", FloatType(), True),
+        #     StructField("organism", FloatType(), True),
+        #     StructField("speechiness", FloatType(), True),
+        #     StructField("tempo", FloatType(), True),
+        #     StructField("valence", FloatType(), True),
+        #     StructField("acoustic_vector_0", FloatType(), True),
+        #     StructField("acoustic_vector_1", FloatType(), True),
+        #     StructField("acoustic_vector_2", FloatType(), True),
+        #     StructField("acoustic_vector_3", FloatType(), True),
+        #     StructField("acoustic_vector_4", FloatType(), True),
+        #     StructField("acoustic_vector_5", FloatType(), True),
+        #     StructField("acoustic_vector_6", FloatType(), True),
+        #     StructField("acoustic_vector_7", FloatType(), True)
+        # ])
+        
 # user_profile_df = user_profile_df.select(user_features_list).first()
 
 
@@ -28,9 +55,14 @@ import json
 import numpy as np
 from pyspark.sql import SparkSession
 from confluent_kafka import KafkaError, Consumer
-from pyspark.sql.functions import col, udf, array, expr
+import pyspark.sql.functions as F
 from pyspark.ml.linalg import Vectors
-from pyspark.sql.types import StructType, StructField, StringType, FloatType
+from pyspark.sql.types import StructType, StructField, StringType, FloatType, DoubleType
+from pyspark.ml.feature import VectorAssembler
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+from pyspark.ml.feature import Normalizer
+from pyspark.sql.window import Window
 
 class KafkaConsumer:
     def __init__(self, config, topic):
@@ -57,48 +89,19 @@ class SparkApp:
         self._KAFKA_TOPIC = "spotify-realtime-recommender"
         self.spark = SparkSession.builder \
                             .appName("Real-time Music Recommender") \
-                            .config("spark.mongodb.read.connection.uri", "mongodb://127.0.0.1/spotify-realtime-recommendation.realtime-user-profiles") \
-                            .config("spark.mongodb.write.connection.uri", "mongodb://127.0.0.1/spotify-realtime-recommendation.realtime-user-profiles") \
+                            .config("spark.mongodb.read.connection.uri", "mongodb://127.0.0.1/spotify-realtime-recommendation.track-features") \
+                            .config("spark.mongodb.write.connection.uri", "mongodb://127.0.0.1/spotify-realtime-recommendation.track-features") \
                             .config("spark.jars.packages", "org.mongodb.spark:mongo-spark-connector_2.12:10.2.0") \
                             .getOrCreate()
 
         self.kafka_consumer = KafkaConsumer(recommendation_consumer_config, self._KAFKA_TOPIC)
-        
-        self.user_profiles_df = self.spark.readStream \
-                                    .format("mongodb") \
-                                    .option("uri", "mongodb://127.0.0.1:27017/spotify-realtime-recommendation.realtime-user-profiles") \
-                                    .load()
-        schema = StructType([
-            StructField("session_id", StringType(), True),
-            StructField("acousticness", FloatType(), True),
-            StructField("beat_strength", FloatType(), True),
-            StructField("bounciness", FloatType(), True),
-            StructField("danceability", FloatType(), True),
-            StructField("dyn_range_mean", FloatType(), True),
-            StructField("energy", FloatType(), True),
-            StructField("flatness", FloatType(), True),
-            StructField("instrumentalness", FloatType(), True),
-            StructField("liveness", FloatType(), True),
-            StructField("loudness", FloatType(), True),
-            StructField("mechanism", FloatType(), True),
-            StructField("organism", FloatType(), True),
-            StructField("speechiness", FloatType(), True),
-            StructField("tempo", FloatType(), True),
-            StructField("valence", FloatType(), True),
-            StructField("acoustic_vector_0", FloatType(), True),
-            StructField("acoustic_vector_1", FloatType(), True),
-            StructField("acoustic_vector_2", FloatType(), True),
-            StructField("acoustic_vector_3", FloatType(), True),
-            StructField("acoustic_vector_4", FloatType(), True),
-            StructField("acoustic_vector_5", FloatType(), True),
-            StructField("acoustic_vector_6", FloatType(), True),
-            StructField("acoustic_vector_7", FloatType(), True)
-        ])
-        # self.tracks_df = self.spark.readStream \
-        #                             .format("mongodb") \
-        #                             .option("uri", "mongodb://127.0.0.1:27017/spotify-realtime-recommendation.track-features") \
-        #                             .load()
-        self.tracks_df = self.spark.read.option("uri", "mongodb://127.0.0.1/spotify-realtime-recommendation/track-features").format("com.mongodb.spark.sql.connector.MongoTableProvider").load()
+
+        self.tracks_df = self.spark \
+                            .read \
+                            .option("uri", "mongodb://127.0.0.1/spotify-realtime-recommendation/track-features") \
+                            .format("com.mongodb.spark.sql.connector.MongoTableProvider") \
+                            .load()
+        self.tracks_df = self.tracks_df.select(["_id", "acousticness", "beat_strength", "bounciness", "danceability", "dyn_range_mean", "energy", "flatness", "instrumentalness", "liveness", "loudness", "mechanism", "organism", "speechiness", "tempo", "valence", "acoustic_vector_0", "acoustic_vector_1", "acoustic_vector_2", "acoustic_vector_3", "acoustic_vector_4", "acoustic_vector_5", "acoustic_vector_6", "acoustic_vector_7"])
 
     def consume_realtime_logs(self):
         self.kafka_consumer.subscribe()
@@ -128,11 +131,8 @@ class SparkApp:
     def _process_message(self, msg):
         session_id = msg.key().decode('utf-8')
 
-        user_features = json.loads(msg.value().decode('utf-8'))
+        user_data = json.loads(msg.value().decode('utf-8'))
 
-        print(f"Processing message for session ID: {session_id} ->", user_features)
-
-        self.tracks_df.show(1)
 
         print("\n\n\n")
 

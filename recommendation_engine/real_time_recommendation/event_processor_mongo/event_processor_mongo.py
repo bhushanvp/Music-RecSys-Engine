@@ -124,6 +124,9 @@ class SpotifyUserLogsConsumer:
 
             try:
                 self._realtime_user_profiles_collection.update_one({'session_id': session_id}, {'$set': new_temporary_user_profile})
+
+                new_temporary_user_profile.pop("session_id")
+
                 self.kafka_producer.produce_data(session_id, new_temporary_user_profile)
                 print("Got")
             except Exception as e:
@@ -140,6 +143,9 @@ class SpotifyUserLogsConsumer:
 
             try:
                 self._realtime_user_profiles_collection.insert_one(temporary_user_profile)
+
+                temporary_user_profile.pop("session_id")
+
                 self.kafka_producer.produce_data(session_id, temporary_user_profile)
                 print("Hit")
             except Exception as e:

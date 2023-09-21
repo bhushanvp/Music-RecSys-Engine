@@ -1,68 +1,10 @@
-# from pyspark.sql import SparkSession
-# from pyspark.sql.functions import col, udf, array
-# from pyspark.sql.types import DoubleType
-# from pyspark.ml.linalg import Vectors
-
-# spark = SparkSession.builder \
-#     .appName("MongoDBIntegration") \
-#     .config("spark.mongodb.read.connection.uri", "mongodb://127.0.0.1/spotify-realtime-recommendation.realtime-user-profiles") \
-#     .config("spark.mongodb.write.connection.uri", "mongodb://127.0.0.1/spotify-realtime-recommendation/realtime-user-profiles") \
-#     .config("spark.jars.packages", "org.mongodb.spark:mongo-spark-connector_2.12:10.2.0") \
-#     .getOrCreate()
-
-# user_profiles_df = spark.read.format("com.mongodb.spark.sql.connector.MongoTableProvider").load()
-
-
-# track_features_list = ["_id", "acousticness", "beat_strength", "bounciness", "danceability", "dyn_range_mean", "energy", "flatness", "instrumentalness", "liveness", "loudness", "mechanism", "organism", "speechiness", "tempo", "valence", "acoustic_vector_0", "acoustic_vector_1", "acoustic_vector_2", "acoustic_vector_3", "acoustic_vector_4", "acoustic_vector_5", "acoustic_vector_6", "acoustic_vector_7"]
-
-# user_features_list = ["acousticness", "beat_strength", "bounciness", "danceability", "dyn_range_mean", "energy", "flatness", "instrumentalness", "liveness", "loudness", "mechanism", "organism", "speechiness", "tempo", "valence", "acoustic_vector_0", "acoustic_vector_1", "acoustic_vector_2", "acoustic_vector_3", "acoustic_vector_4", "acoustic_vector_5", "acoustic_vector_6", "acoustic_vector_7"]
-
-# tracks_df = tracks_df.select(track_features_list)
-
-# user_profile_df = user_profiles_df.filter(col("session_id")=="0_00010fc5-b79e-4cdf-bc4c-f140d0f99a3a")
-
-        # schema = StructType([
-        #     StructField("session_id", StringType(), True),
-        #     StructField("acousticness", FloatType(), True),
-        #     StructField("beat_strength", FloatType(), True),
-        #     StructField("bounciness", FloatType(), True),
-        #     StructField("danceability", FloatType(), True),
-        #     StructField("dyn_range_mean", FloatType(), True),
-        #     StructField("energy", FloatType(), True),
-        #     StructField("flatness", FloatType(), True),
-        #     StructField("instrumentalness", FloatType(), True),
-        #     StructField("liveness", FloatType(), True),
-        #     StructField("loudness", FloatType(), True),
-        #     StructField("mechanism", FloatType(), True),
-        #     StructField("organism", FloatType(), True),
-        #     StructField("speechiness", FloatType(), True),
-        #     StructField("tempo", FloatType(), True),
-        #     StructField("valence", FloatType(), True),
-        #     StructField("acoustic_vector_0", FloatType(), True),
-        #     StructField("acoustic_vector_1", FloatType(), True),
-        #     StructField("acoustic_vector_2", FloatType(), True),
-        #     StructField("acoustic_vector_3", FloatType(), True),
-        #     StructField("acoustic_vector_4", FloatType(), True),
-        #     StructField("acoustic_vector_5", FloatType(), True),
-        #     StructField("acoustic_vector_6", FloatType(), True),
-        #     StructField("acoustic_vector_7", FloatType(), True)
-        # ])
-        
-# user_profile_df = user_profile_df.select(user_features_list).first()
-
-
 import json
 import numpy as np
 from pyspark.sql import SparkSession
 from confluent_kafka import KafkaError, Consumer
 import pyspark.sql.functions as F
-from pyspark.ml.linalg import Vectors
-from pyspark.sql.types import StructType, StructField, StringType, FloatType, DoubleType
-from pyspark.ml.feature import VectorAssembler
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
-from pyspark.ml.feature import Normalizer
-from pyspark.sql.window import Window
 
 class KafkaConsumer:
     def __init__(self, config, topic):
@@ -102,8 +44,6 @@ class SparkApp:
                             .format("com.mongodb.spark.sql.connector.MongoTableProvider") \
                             .load()
         
-        # self.tracks_df = self.tracks_df.select(["_id", "acousticness", "beat_strength", "bounciness", "danceability", "dyn_range_mean", "energy", "flatness", "instrumentalness", "liveness", "loudness", "mechanism", "organism", "speechiness", "tempo", "valence", "acoustic_vector_0", "acoustic_vector_1", "acoustic_vector_2", "acoustic_vector_3", "acoustic_vector_4", "acoustic_vector_5", "acoustic_vector_6", "acoustic_vector_7"])
-
         self.tracks_features = np.array(self.tracks_df.select(
             ["acousticness", "beat_strength", "bounciness", "danceability", "dyn_range_mean", "energy", "flatness", "instrumentalness", "liveness", "loudness", "mechanism", "organism", "speechiness", "tempo", "valence"]
         ).collect())
@@ -148,10 +88,6 @@ class SparkApp:
             user_data["speechiness"], user_data["tempo"],
             user_data["valence"]
         ]).reshape(1, -1)
-        
-        # tracks_features = np.array(self.tracks_df.select(
-        #     ["acousticness", "beat_strength", "bounciness", "danceability", "dyn_range_mean", "energy", "flatness", "instrumentalness", "liveness", "loudness", "mechanism", "organism", "speechiness", "tempo", "valence"]
-        # ).collect())
 
         similarity_scores = cosine_similarity(user_features, self.tracks_features).squeeze()
         
@@ -162,6 +98,7 @@ class SparkApp:
         num_recommendations = 5
         recommended_tracks = similarity_df.orderBy(F.desc("similarity")).limit(num_recommendations)
         
+        print(f"Top 5 recommendations for user {session_id}")
         recommended_tracks.show()
 
         print("\n\n\n")

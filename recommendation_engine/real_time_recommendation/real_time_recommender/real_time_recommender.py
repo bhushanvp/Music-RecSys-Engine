@@ -101,7 +101,12 @@ class SparkApp:
                             .option("uri", "mongodb://127.0.0.1/spotify-realtime-recommendation/track-features") \
                             .format("com.mongodb.spark.sql.connector.MongoTableProvider") \
                             .load()
-        self.tracks_df = self.tracks_df.select(["_id", "acousticness", "beat_strength", "bounciness", "danceability", "dyn_range_mean", "energy", "flatness", "instrumentalness", "liveness", "loudness", "mechanism", "organism", "speechiness", "tempo", "valence", "acoustic_vector_0", "acoustic_vector_1", "acoustic_vector_2", "acoustic_vector_3", "acoustic_vector_4", "acoustic_vector_5", "acoustic_vector_6", "acoustic_vector_7"])
+        
+        # self.tracks_df = self.tracks_df.select(["_id", "acousticness", "beat_strength", "bounciness", "danceability", "dyn_range_mean", "energy", "flatness", "instrumentalness", "liveness", "loudness", "mechanism", "organism", "speechiness", "tempo", "valence", "acoustic_vector_0", "acoustic_vector_1", "acoustic_vector_2", "acoustic_vector_3", "acoustic_vector_4", "acoustic_vector_5", "acoustic_vector_6", "acoustic_vector_7"])
+
+        self.tracks_features = np.array(self.tracks_df.select(
+            ["acousticness", "beat_strength", "bounciness", "danceability", "dyn_range_mean", "energy", "flatness", "instrumentalness", "liveness", "loudness", "mechanism", "organism", "speechiness", "tempo", "valence"]
+        ).collect())
 
     def consume_realtime_logs(self):
         self.kafka_consumer.subscribe()
@@ -133,8 +138,36 @@ class SparkApp:
 
         user_data = json.loads(msg.value().decode('utf-8'))
 
+        user_features = np.array([
+            user_data["acousticness"], user_data["beat_strength"],
+            user_data["bounciness"], user_data["danceability"],
+            user_data["dyn_range_mean"], user_data["energy"],
+            user_data["flatness"], user_data["instrumentalness"],
+            user_data["liveness"], user_data["loudness"],
+            user_data["mechanism"], user_data["organism"],
+            user_data["speechiness"], user_data["tempo"],
+            user_data["valence"]
+        ]).reshape(1, -1)
+        
+        # tracks_features = np.array(self.tracks_df.select(
+        #     ["acousticness", "beat_strength", "bounciness", "danceability", "dyn_range_mean", "energy", "flatness", "instrumentalness", "liveness", "loudness", "mechanism", "organism", "speechiness", "tempo", "valence"]
+        # ).collect())
+
+        similarity_scores = cosine_similarity(user_features, self.tracks_features).squeeze()
+        
+        similarity_df = self.spark.createDataFrame(
+            [(row["_id"], float(similarity_scores[idx])) for idx, row in enumerate(self.tracks_df.collect())], ["_id", "similarity"]
+        )
+
+        num_recommendations = 5
+        recommended_tracks = similarity_df.orderBy(F.desc("similarity")).limit(num_recommendations)
+        
+        recommended_tracks.show()
 
         print("\n\n\n")
+
+    def similarity(v1, v2):
+        return float(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)))
 
 def main():
     recommendation_consumer_config = {

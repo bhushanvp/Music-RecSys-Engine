@@ -1,4 +1,4 @@
 server/node_modules
 server/resources
-.vscode
+.vscode/
 spark-warehouse/

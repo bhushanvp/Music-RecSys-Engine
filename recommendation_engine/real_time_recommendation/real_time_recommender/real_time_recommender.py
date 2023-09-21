@@ -89,7 +89,7 @@ class SparkApp:
             user_data["valence"]
         ]).reshape(1, -1)
 
-        similarity_scores = cosine_similarity(user_features, self.tracks_features).squeeze()
+        similarity_scores = cosine_similarity(self.tracks_features, user_features).squeeze()
         
         similarity_df = self.spark.createDataFrame(
             [(row["_id"], float(similarity_scores[idx])) for idx, row in enumerate(self.tracks_df.collect())], ["_id", "similarity"]
